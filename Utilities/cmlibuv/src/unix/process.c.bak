@@ -1012,7 +1012,7 @@ int uv_spawn(uv_loop_t* loop,
 
   if (options->cpumask != NULL) {
 #ifndef CMAKE_BOOTSTRAP
-#if defined(__linux__) || defined(__FreeBSD__)
+#if (defined(__linux__) && (!defined(__ANDROID__) || __ANDROID_API__ >= 28)) || defined(__FreeBSD__)
     if (options->cpumask_size < (size_t)uv_cpumask_size()) {
       return UV_EINVAL;
     }
