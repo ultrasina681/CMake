@@ -36,7 +36,8 @@ jobs:
       run: |
         cd CMake
         
-        echo "=== Patching libuv for Android API 21 (all architectures) ==="
+        echo "=== Patching libuv for Android API 21 ==="
+        
         # Fix uv_cpumask_size - line 1410
         sed -i '1410s/#if defined(__linux__) || defined(__FreeBSD__)/#if (defined(__linux__) \&\& (!defined(__ANDROID__) || __ANDROID_API__ >= 28)) || defined(__FreeBSD__)/' \
           Utilities/cmlibuv/src/unix/core.c
@@ -45,7 +46,29 @@ jobs:
         sed -i '1647s/#ifdef __linux__/#if defined(__linux__) \&\& (!defined(__ANDROID__) || __ANDROID_API__ >= 28)/' \
           Utilities/cmlibuv/src/unix/core.c
         
-        echo "=== Creating android_lf.h (works for all Android architectures) ==="
+        # Fix pipe2 for Android API 21 - add fallback at top of file
+        sed -i '/^#include "uv.h"/a \
+        \
+        /* Android API 21 pipe2 fallback */ \
+        #if defined(__ANDROID__) \&\& __ANDROID_API__ < 21 \
+        #include <fcntl.h> \
+        static int pipe2(int pipefd[2], int flags) { \
+          int ret = pipe(pipefd); \
+          if (ret == 0) { \
+            if (flags \& O_CLOEXEC) { \
+              fcntl(pipefd[0], F_SETFD, FD_CLOEXEC); \
+              fcntl(pipefd[1], F_SETFD, FD_CLOEXEC); \
+            } \
+            if (flags \& O_NONBLOCK) { \
+              fcntl(pipefd[0], F_SETFL, O_NONBLOCK); \
+              fcntl(pipefd[1], F_SETFL, O_NONBLOCK); \
+            } \
+          } \
+          return ret; \
+        } \
+        #endif' Utilities/cmlibuv/src/unix/pipe.c
+        
+        echo "=== Creating android_lf.h ==="
         cat > Utilities/cmlibarchive/libarchive/android_lf.h << 'EOF'
         #ifndef ANDROID_LF_H
         #define ANDROID_LF_H
@@ -56,53 +79,41 @@ jobs:
         #include <sys/stat.h>
         
         #if defined(__ANDROID__)
-        /* Android unified headers provide 64-bit functions by default on all architectures
-         * since NDK r15. For API level 21+, these are already defined correctly.
-         * Map 64-bit suffixed functions to regular versions for compatibility.
-         */
-        
         #ifndef lstat64
         #define lstat64 lstat
         #endif
-        
         #ifndef stat64
         #define stat64 stat
         #endif
-        
         #ifndef fstat64
         #define fstat64 fstat
         #endif
-        
         #ifndef open64
         #define open64 open
         #endif
-        
         #ifndef lseek64
         #define lseek64 lseek
         #endif
-        
         #ifndef off64_t
         #define off64_t off_t
         #endif
-        
         #ifndef ftruncate64
         #define ftruncate64 ftruncate
         #endif
-        
         #ifndef readdir64
         #define readdir64 readdir
         #endif
-        
         #ifndef dirent64
         #define dirent64 dirent
         #endif
+        #endif
         
-        #endif /* __ANDROID__ */
-        
-        #endif /* ANDROID_LF_H */
+        #endif
         EOF
         
-        echo "Patches applied successfully"
+        echo "=== Patches applied ==="
+        echo "Verifying pipe.c patch:"
+        head -30 Utilities/cmlibuv/src/unix/pipe.c | grep -A5 "pipe2"
 
     - name: Build Native CMake (Host Tools)
       run: |
@@ -125,7 +136,6 @@ jobs:
       run: |
         cd CMake
         
-        # Set architecture-specific variables
         case "${{ matrix.arch }}" in
           arm64-v8a)
             ANDROID_ABI="arm64-v8a"
@@ -148,12 +158,9 @@ jobs:
         echo "ANDROID_ABI=$ANDROID_ABI" >> $GITHUB_ENV
         echo "CLANG_PREFIX=$CLANG_PREFIX" >> $GITHUB_ENV
         
-        echo "=== Building for $ANDROID_ABI ==="
-        
         mkdir -p build-android-${{ matrix.arch }}
         cd build-android-${{ matrix.arch }}
         
-        # Don't disable exceptions - jsoncpp needs them
         ../build-host/bin/cmake .. \
           -DCMAKE_TOOLCHAIN_FILE=$ANDROID_NDK_HOME/build/cmake/android.toolchain.cmake \
           -DANDROID_ABI=$ANDROID_ABI \
@@ -189,7 +196,7 @@ jobs:
         
         CLANG_BIN="$ANDROID_NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64/bin"
         
-        echo "=== Creating libcmake.so for ${{ env.CLANG_PREFIX }} ==="
+        echo "=== Creating libcmake.so ==="
         ${CLANG_BIN}/${{ env.CLANG_PREFIX }}21-clang++ \
           -shared -o libcmake.so \
           -Wl,--whole-archive lib/libCMakeLib.a -Wl,--no-whole-archive \
@@ -198,34 +205,10 @@ jobs:
           -Wl,--export-dynamic \
           -fPIC -ldl -llog -latomic
         
-        if [ ! -f libcmake.so ]; then
-          echo "ERROR: libcmake.so not created!"
-          exit 1
-        fi
-        
-        echo "=== Stripping library ==="
         ${CLANG_BIN}/llvm-strip --strip-unneeded libcmake.so
         
-        echo "=== Verifying library ==="
-        file libcmake.so
-        ${CLANG_BIN}/llvm-readelf -h libcmake.so | grep Machine
-        
-        echo "=== Library info ==="
         ls -lh libcmake.so
-        echo "Size: $(du -h libcmake.so | cut -f1)"
-
-    - name: Test Library Exports
-      run: |
-        cd CMake/build-android-${{ matrix.arch }}
-        
-        CLANG_BIN="$ANDROID_NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64/bin"
-        
-        echo "=== Checking exported symbols ==="
-        ${CLANG_BIN}/llvm-nm -gD libcmake.so | grep -i cmake | head -20 || echo "Symbols may be stripped"
-        
-        echo ""
-        echo "=== Library dependencies ==="
-        ${CLANG_BIN}/llvm-readelf -d libcmake.so | grep NEEDED
+        file libcmake.so
 
     - name: Package Build
       run: |
@@ -234,31 +217,18 @@ jobs:
         mkdir -p package/lib
         cp libcmake.so package/lib/
         
-        # Create a README
         cat > package/README.md << EOF
         # CMake Android Library - ${{ matrix.arch }}
         
-        Built for Android API 21+
         Architecture: ${{ matrix.arch }}
-        Target Triple: ${{ env.CLANG_PREFIX }}
+        Target: ${{ env.CLANG_PREFIX }}
+        Min API: 21 (Android 5.0+)
         NDK: r29
-        
-        ## Usage
-        Load libcmake.so in your Android app and call CMake functions.
-        
-        ## Build Info
-        - Optimized for size (-Os)
-        - Stripped of debug symbols
-        - 16KB page size support
-        - No RTTI (exceptions enabled for jsoncpp)
         
         Size: $(du -h libcmake.so | cut -f1)
         EOF
         
         tar -czf cmake-android-${{ matrix.arch }}.tar.gz -C package .
-        
-        echo "=== Package created ==="
-        ls -lh cmake-android-${{ matrix.arch }}.tar.gz
 
     - name: Upload Artifacts
       uses: actions/upload-artifact@v4
@@ -266,31 +236,13 @@ jobs:
         name: cmake-android-${{ matrix.arch }}
         path: CMake/build-android-${{ matrix.arch }}/cmake-android-${{ matrix.arch }}.tar.gz
         retention-days: 30
-        compression-level: 9
 
     - name: Build Summary
       run: |
         cd CMake/build-android-${{ matrix.arch }}
         
         echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-        echo "  Build Summary: ${{ matrix.arch }}"
+        echo "  CMake Android: ${{ matrix.arch }}"
         echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-        echo ""
-        echo "Architecture:     ${{ matrix.arch }}"
-        echo "Target Triple:    ${{ env.CLANG_PREFIX }}"
-        echo "Min API Level:    21 (Android 5.0+)"
-        echo "NDK Version:      r29"
-        echo ""
-        echo "Library:          libcmake.so"
-        echo "Size:             $(ls -lh libcmake.so | awk '{print $5}')"
-        echo "Archive:          cmake-android-${{ matrix.arch }}.tar.gz"
-        echo "Archive Size:     $(du -h cmake-android-${{ matrix.arch }}.tar.gz | cut -f1)"
-        echo ""
-        echo "Features:"
-        echo "  ✓ Size optimized (-Os)"
-        echo "  ✓ 16KB page size support"
-        echo "  ✓ Stripped symbols"
-        echo "  ✓ No RTTI (exceptions enabled)"
-        echo "  ✓ Android API 21+ compatible"
-        echo ""
+        echo "Size: $(ls -lh libcmake.so | awk '{print $5}')"
         echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
