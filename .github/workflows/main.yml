@@ -28,15 +28,13 @@ jobs:
         add-to-path: true
 
     - name: Check System CMake
-      run: |
-        cmake --version
-        which cmake
+      run: cmake --version
 
     - name: Apply Android Patches
       run: |
         cd CMake
         
-        echo "=== Creating android_compat.h for pipe2 ==="
+        echo "=== Creating android_compat.h ==="
         cat > Utilities/cmlibuv/src/unix/android_compat.h << 'EOF'
         #ifndef ANDROID_COMPAT_H
         #define ANDROID_COMPAT_H
@@ -45,6 +43,7 @@ jobs:
         #include <unistd.h>
         #include <fcntl.h>
         
+        /* pipe2 fallback for Android API < 21 */
         static inline int pipe2(int pipefd[2], int flags) {
           int ret = pipe(pipefd);
           if (ret == 0) {
@@ -64,10 +63,17 @@ jobs:
         #endif
         EOF
         
+        # Include compat header in pipe.c
         sed -i '1i #if defined(__ANDROID__)\n#include "android_compat.h"\n#endif' \
           Utilities/cmlibuv/src/unix/pipe.c
         
-        echo "=== Patching libuv core.c ==="
+        echo "=== Patching process.c for Android API 21 ==="
+        # Wrap CPU affinity code to only work on API 28+
+        sed -i '/#ifdef __linux__/,/^#endif/{
+          s/^#ifdef __linux__$/#if defined(__linux__) \&\& (!defined(__ANDROID__) || __ANDROID_API__ >= 28)/
+        }' Utilities/cmlibuv/src/unix/process.c
+        
+        echo "=== Patching core.c ==="
         sed -i '1410s/#if defined(__linux__) || defined(__FreeBSD__)/#if (defined(__linux__) \&\& (!defined(__ANDROID__) || __ANDROID_API__ >= 28)) || defined(__FreeBSD__)/' \
           Utilities/cmlibuv/src/unix/core.c
         
@@ -107,6 +113,8 @@ jobs:
         #endif
         #endif
         EOF
+        
+        echo "=== Patches applied ==="
 
     - name: Configure Android Build
       run: |
@@ -150,6 +158,8 @@ jobs:
           -fPIC -ldl -llog -latomic
         
         $ANDROID_NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-strip --strip-unneeded libcmake.so
+        
+        echo "=== Built ${{ matrix.arch }} ==="
         ls -lh libcmake.so
 
     - name: Upload
@@ -157,3 +167,4 @@ jobs:
       with:
         name: cmake-${{ matrix.arch }}
         path: CMake/build-${{ matrix.arch }}/libcmake.so
+        retention-days: 30
