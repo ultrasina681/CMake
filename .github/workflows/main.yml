@@ -31,18 +31,7 @@ jobs:
       run: |
         cd CMake
         
-        echo "=== Aggressive Android API 21 patching for libuv ==="
-        
-        # Patch ALL files in libuv to disable CPU affinity on Android API < 28
-        find Utilities/cmlibuv/src -name "*.c" -o -name "*.h" | while read file; do
-          # Replace all #ifdef __linux__ with Android check
-          sed -i 's/#ifdef __linux__/#if defined(__linux__) \&\& (!defined(__ANDROID__) || __ANDROID_API__ >= 28)/g' "$file"
-          
-          # Replace all #if defined(__linux__) with Android check (if not already patched)
-          sed -i 's/#if defined(__linux__)$/#if defined(__linux__) \&\& (!defined(__ANDROID__) || __ANDROID_API__ >= 28)/g' "$file"
-        done
-        
-        echo "=== Creating android_compat.h for pipe2 ==="
+        echo "=== Creating comprehensive Android compat header ==="
         cat > Utilities/cmlibuv/src/unix/android_compat.h << 'EOF'
         #ifndef ANDROID_COMPAT_H
         #define ANDROID_COMPAT_H
@@ -51,6 +40,8 @@ jobs:
         #include <unistd.h>
         #include <fcntl.h>
         
+        /* pipe2 fallback */
+        #ifndef pipe2
         static inline int pipe2(int pipefd[2], int flags) {
           int ret = pipe(pipefd);
           if (ret == 0) {
@@ -67,15 +58,69 @@ jobs:
         }
         #endif
         
+        /* Disable CPU affinity on Android API < 28 */
+        #if __ANDROID_API__ < 28
+        #define UV_DISABLE_CPU_AFFINITY 1
         #endif
+        
+        #endif /* __ANDROID__ */
+        #endif /* ANDROID_COMPAT_H */
         EOF
         
-        # Add android_compat.h to all unix/*.c files that might use pipe2
-        for file in Utilities/cmlibuv/src/unix/*.c; do
-          if grep -q "pipe2" "$file"; then
-            sed -i '1i #if defined(__ANDROID__)\n#include "android_compat.h"\n#endif\n' "$file"
-          fi
-        done
+        echo "=== Patching core.c - disable CPU_SETSIZE on old Android ==="
+        cat > /tmp/core_patch.txt << 'EOF'
+        --- a/Utilities/cmlibuv/src/unix/core.c
+        +++ b/Utilities/cmlibuv/src/unix/core.c
+        @@ -21,6 +21,10 @@
+         #include "uv.h"
+         #include "internal.h"
+         
+        +#if defined(__ANDROID__)
+        +#include "android_compat.h"
+        +#endif
+        +
+         #include <stddef.h> /* NULL */
+         #include <stdio.h> /* printf */
+         #include <stdlib.h>
+        @@ -1408,7 +1412,7 @@ int uv_os_unsetenv(const char* name) {
+         
+         
+         int uv_cpumask_size(void) {
+        -#if defined(__linux__) || defined(__FreeBSD__)
+        +#if (defined(__linux__) && (!defined(__ANDROID__) || __ANDROID_API__ >= 28)) || defined(__FreeBSD__)
+           return CPU_SETSIZE;
+         #else
+           return UV_ENOTSUP;
+        @@ -1644,7 +1648,7 @@ int uv__search_path(const char* prog, char* buf, size_t* buflen) {
+         
+         
+         unsigned int uv_available_parallelism(void) {
+        -#ifdef __linux__
+        +#if defined(__linux__) && (!defined(__ANDROID__) || __ANDROID_API__ >= 28)
+           cpu_set_t set;
+           long rc;
+         
+        EOF
+        
+        # Apply manual patches to core.c
+        sed -i '22i #if defined(__ANDROID__)\n#include "android_compat.h"\n#endif' Utilities/cmlibuv/src/unix/core.c
+        sed -i 's/^int uv_cpumask_size(void) {$/int uv_cpumask_size(void) {\n#if (defined(__linux__) \&\& (!defined(__ANDROID__) || __ANDROID_API__ >= 28)) || defined(__FreeBSD__)/' Utilities/cmlibuv/src/unix/core.c
+        sed -i '/^int uv_cpumask_size/,/^}$/ { s/^#if defined(__linux__) || defined(__FreeBSD__)$/  return CPU_SETSIZE;\n#else/; }' Utilities/cmlibuv/src/unix/core.c
+        
+        # Simpler approach - just replace the specific lines
+        sed -i '1411s/^#if defined(__linux__) || defined(__FreeBSD__)$/#if (defined(__linux__) \&\& (!defined(__ANDROID__) || __ANDROID_API__ >= 28)) || defined(__FreeBSD__)/' Utilities/cmlibuv/src/unix/core.c
+        sed -i '1648s/^#ifdef __linux__$/#if defined(__linux__) \&\& (!defined(__ANDROID__) || __ANDROID_API__ >= 28)/' Utilities/cmlibuv/src/unix/core.c
+        
+        echo "=== Patching process.c - disable CPU affinity on old Android ==="
+        sed -i '1i #if defined(__ANDROID__)\n#include "android_compat.h"\n#endif' Utilities/cmlibuv/src/unix/process.c
+        
+        # Wrap the CPU affinity section in process.c
+        sed -i '/uv__cpu_set_t cpuset;/,/pthread_setaffinity_np/ {
+          s/^#ifdef __linux__$/#if defined(__linux__) \&\& (!defined(__ANDROID__) || __ANDROID_API__ >= 28)/
+        }' Utilities/cmlibuv/src/unix/process.c
+        
+        echo "=== Patching pipe.c ==="
+        sed -i '1i #if defined(__ANDROID__)\n#include "android_compat.h"\n#endif' Utilities/cmlibuv/src/unix/pipe.c
         
         echo "=== Creating android_lf.h ==="
         cat > Utilities/cmlibarchive/libarchive/android_lf.h << 'EOF'
@@ -110,13 +155,6 @@ jobs:
         #endif
         #endif
         EOF
-        
-        echo "=== Verification ==="
-        echo "Files with __linux__ after patching:"
-        grep -r "__linux__" Utilities/cmlibuv/src/unix/*.c | head -5
-        echo ""
-        echo "Files with pipe2:"
-        grep -l "pipe2" Utilities/cmlibuv/src/unix/*.c
 
     - name: Configure Android Build
       run: |
@@ -161,7 +199,7 @@ jobs:
         
         $ANDROID_NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-strip --strip-unneeded libcmake.so
         
-        echo "✓ ${{ matrix.arch }}: $(ls -lh libcmake.so | awk '{print $5}')"
+        ls -lh libcmake.so
 
     - name: Upload
       uses: actions/upload-artifact@v4
