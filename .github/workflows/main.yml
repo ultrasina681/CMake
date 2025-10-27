@@ -27,10 +27,10 @@ jobs:
         ndk-version: r29
         add-to-path: true
 
-    - name: Install Dependencies
+    - name: Check System CMake
       run: |
-        sudo apt-get update
-        sudo apt-get install -y ninja-build cmake python3 build-essential
+        cmake --version
+        which cmake
 
     - name: Apply Android Patches
       run: |
@@ -41,7 +41,7 @@ jobs:
         #ifndef ANDROID_COMPAT_H
         #define ANDROID_COMPAT_H
         
-        #if defined(__ANDROID__) && !defined(__ANDROID_API__) || __ANDROID_API__ < 28
+        #if defined(__ANDROID__)
         #include <unistd.h>
         #include <fcntl.h>
         
@@ -64,17 +64,13 @@ jobs:
         #endif
         EOF
         
-        # Include the compat header in pipe.c
         sed -i '1i #if defined(__ANDROID__)\n#include "android_compat.h"\n#endif' \
           Utilities/cmlibuv/src/unix/pipe.c
         
-        echo "=== Patching libuv core.c for Android API 21 ==="
-        
-        # Fix uv_cpumask_size
+        echo "=== Patching libuv core.c ==="
         sed -i '1410s/#if defined(__linux__) || defined(__FreeBSD__)/#if (defined(__linux__) \&\& (!defined(__ANDROID__) || __ANDROID_API__ >= 28)) || defined(__FreeBSD__)/' \
           Utilities/cmlibuv/src/unix/core.c
         
-        # Fix uv_available_parallelism
         sed -i '1647s/#ifdef __linux__/#if defined(__linux__) \&\& (!defined(__ANDROID__) || __ANDROID_API__ >= 28)/' \
           Utilities/cmlibuv/src/unix/core.c
         
@@ -82,12 +78,10 @@ jobs:
         cat > Utilities/cmlibarchive/libarchive/android_lf.h << 'EOF'
         #ifndef ANDROID_LF_H
         #define ANDROID_LF_H
-        
         #include <sys/types.h>
         #include <fcntl.h>
         #include <unistd.h>
         #include <sys/stat.h>
-        
         #if defined(__ANDROID__)
         #ifndef lstat64
         #define lstat64 lstat
@@ -110,120 +104,56 @@ jobs:
         #ifndef ftruncate64
         #define ftruncate64 ftruncate
         #endif
-        #ifndef readdir64
-        #define readdir64 readdir
         #endif
-        #ifndef dirent64
-        #define dirent64 dirent
-        #endif
-        #endif
-        
         #endif
         EOF
-        
-        echo "=== Verifying patches ==="
-        head -10 Utilities/cmlibuv/src/unix/pipe.c
-        ls -la Utilities/cmlibuv/src/unix/android_compat.h
-
-    - name: Build Native CMake (Host Tools)
-      run: |
-        cd CMake
-        mkdir -p build-host
-        cd build-host
-        
-        cmake .. \
-          -DCMAKE_BUILD_TYPE=Release \
-          -DBUILD_TESTING=OFF \
-          -DBUILD_QtDialog=OFF \
-          -DCMAKE_USE_SYSTEM_LIBRARIES=OFF
-        
-        make -j$(nproc)
-        ./bin/cmake --version
 
     - name: Configure Android Build
       run: |
         cd CMake
         
         case "${{ matrix.arch }}" in
-          arm64-v8a)
-            ANDROID_ABI="arm64-v8a"
-            CLANG_PREFIX="aarch64-linux-android"
-            ;;
-          armeabi-v7a)
-            ANDROID_ABI="armeabi-v7a"
-            CLANG_PREFIX="armv7a-linux-androideabi"
-            ;;
-          x86_64)
-            ANDROID_ABI="x86_64"
-            CLANG_PREFIX="x86_64-linux-android"
-            ;;
-          x86)
-            ANDROID_ABI="x86"
-            CLANG_PREFIX="i686-linux-android"
-            ;;
+          arm64-v8a) CLANG_PREFIX="aarch64-linux-android" ;;
+          armeabi-v7a) CLANG_PREFIX="armv7a-linux-androideabi" ;;
+          x86_64) CLANG_PREFIX="x86_64-linux-android" ;;
+          x86) CLANG_PREFIX="i686-linux-android" ;;
         esac
         
-        echo "ANDROID_ABI=$ANDROID_ABI" >> $GITHUB_ENV
         echo "CLANG_PREFIX=$CLANG_PREFIX" >> $GITHUB_ENV
         
-        mkdir -p build-android-${{ matrix.arch }}
-        cd build-android-${{ matrix.arch }}
+        mkdir -p build-${{ matrix.arch }}
+        cd build-${{ matrix.arch }}
         
-        ../build-host/bin/cmake .. \
+        cmake .. \
           -DCMAKE_TOOLCHAIN_FILE=$ANDROID_NDK_HOME/build/cmake/android.toolchain.cmake \
-          -DANDROID_ABI=$ANDROID_ABI \
+          -DANDROID_ABI=${{ matrix.arch }} \
           -DANDROID_PLATFORM=android-21 \
-          -DANDROID_NDK=$ANDROID_NDK_HOME \
-          -DCMAKE_SYSTEM_NAME=Android \
           -DCMAKE_BUILD_TYPE=MinSizeRel \
-          -DCMAKE_C_FLAGS="-Os -ffunction-sections -fdata-sections -fvisibility=hidden" \
-          -DCMAKE_CXX_FLAGS="-Os -ffunction-sections -fdata-sections -fvisibility=hidden -fno-rtti" \
+          -DCMAKE_C_FLAGS="-Os -ffunction-sections -fdata-sections" \
+          -DCMAKE_CXX_FLAGS="-Os -ffunction-sections -fdata-sections -fno-rtti" \
           -DCMAKE_SHARED_LINKER_FLAGS="-Wl,--gc-sections -Wl,--strip-all -Wl,-z,max-page-size=16384" \
           -DBUILD_TESTING=OFF \
-          -DBUILD_QtDialog=OFF \
-          -DCMAKE_USE_SYSTEM_LIBRARIES=OFF
+          -DBUILD_QtDialog=OFF
 
-    - name: Build CMake for Android
+    - name: Build
       run: |
-        cd CMake/build-android-${{ matrix.arch }}
+        cd CMake/build-${{ matrix.arch }}
         make -j$(nproc)
-        ls -lh lib/libCMakeLib.a
 
     - name: Create Shared Library
       run: |
-        cd CMake/build-android-${{ matrix.arch }}
-        
-        CLANG_BIN="$ANDROID_NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64/bin"
-        
-        ${CLANG_BIN}/${{ env.CLANG_PREFIX }}21-clang++ \
+        cd CMake/build-${{ matrix.arch }}
+        $ANDROID_NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64/bin/${{ env.CLANG_PREFIX }}21-clang++ \
           -shared -o libcmake.so \
           -Wl,--whole-archive lib/libCMakeLib.a -Wl,--no-whole-archive \
-          -Os -ffunction-sections -fdata-sections \
-          -Wl,--gc-sections -Wl,--strip-all -Wl,-z,max-page-size=16384 \
-          -Wl,--export-dynamic \
+          -Os -Wl,--gc-sections -Wl,--strip-all -Wl,-z,max-page-size=16384 \
           -fPIC -ldl -llog -latomic
         
-        ${CLANG_BIN}/llvm-strip --strip-unneeded libcmake.so
-        
+        $ANDROID_NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-strip --strip-unneeded libcmake.so
         ls -lh libcmake.so
-        file libcmake.so
 
-    - name: Package Build
-      run: |
-        cd CMake/build-android-${{ matrix.arch }}
-        mkdir -p package/lib
-        cp libcmake.so package/lib/
-        tar -czf cmake-android-${{ matrix.arch }}.tar.gz -C package .
-
-    - name: Upload Artifacts
+    - name: Upload
       uses: actions/upload-artifact@v4
       with:
-        name: cmake-android-${{ matrix.arch }}
-        path: CMake/build-android-${{ matrix.arch }}/cmake-android-${{ matrix.arch }}.tar.gz
-        retention-days: 30
-
-    - name: Build Summary
-      run: |
-        cd CMake/build-android-${{ matrix.arch }}
-        echo "✓ Built: ${{ matrix.arch }}"
-        echo "Size: $(ls -lh libcmake.so | awk '{print $5}')"
+        name: cmake-${{ matrix.arch }}
+        path: CMake/build-${{ matrix.arch }}/libcmake.so
