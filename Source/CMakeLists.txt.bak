@@ -835,6 +835,7 @@ target_link_libraries(
     LibArchive::LibArchive
     LibRHash::LibRHash
     LibUV::LibUV
+    Threads::Threads
     ZLIB::ZLIB
     llpkgc::llpkgc
   )
