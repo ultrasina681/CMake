@@ -14,10 +14,10 @@ jobs:
         arch: [arm64-v8a, armeabi-v7a, x86_64, x86]
 
     steps:
-    - name: Checkout CMake Source
+    - name: Checkout Patched CMake Source
       uses: actions/checkout@v4
       with:
-        repository: Kitware/CMake
+        repository: ultrasina681/CMake
         ref: master
         path: CMake
 
@@ -27,149 +27,37 @@ jobs:
         ndk-version: r29
         add-to-path: true
 
-    - name: Apply Android Patches
+    - name: Verify Patches
       run: |
         cd CMake
-        
-        cat > Utilities/cmlibuv/src/unix/android_compat.h << 'EOF'
-        #ifndef ANDROID_COMPAT_H
-        #define ANDROID_COMPAT_H
-        #if defined(__ANDROID__)
-        #include <unistd.h>
-        #include <fcntl.h>
-        static inline int pipe2(int pipefd[2], int flags) {
-          int ret = pipe(pipefd);
-          if (ret == 0) {
-            if (flags & O_CLOEXEC) {
-              fcntl(pipefd[0], F_SETFD, FD_CLOEXEC);
-              fcntl(pipefd[1], F_SETFD, FD_CLOEXEC);
-            }
-            if (flags & O_NONBLOCK) {
-              fcntl(pipefd[0], F_SETFL, O_NONBLOCK);
-              fcntl(pipefd[1], F_SETFL, O_NONBLOCK);
-            }
-          }
-          return ret;
-        }
-        #endif
-        #endif
-        EOF
-        
-        python3 << 'PYTHON'
-        import re
-        
-        # Patch core.c
-        with open('Utilities/cmlibuv/src/unix/core.c', 'r') as f:
-            lines = f.readlines()
-        
-        new_lines = []
-        for i, line in enumerate(lines):
-            if line.strip() == '#include "uv.h"':
-                new_lines.append(line)
-                new_lines.append('#if defined(__ANDROID__)\n')
-                new_lines.append('#include "android_compat.h"\n')
-                new_lines.append('#endif\n')
-            elif 'int uv_cpumask_size(void) {' in line:
-                new_lines.append(line)
-                new_lines.append('#if (defined(__linux__) && (!defined(__ANDROID__) || __ANDROID_API__ >= 28)) || defined(__FreeBSD__)\n')
-                # Skip the next #if line
-                continue
-            elif i > 0 and 'int uv_cpumask_size(void) {' in lines[i-1]:
-                continue  # Skip original #if
-            elif 'unsigned int uv_available_parallelism(void) {' in line:
-                new_lines.append(line)
-                new_lines.append('#if defined(__linux__) && (!defined(__ANDROID__) || __ANDROID_API__ >= 28)\n')
-                continue
-            elif i > 0 and 'unsigned int uv_available_parallelism(void) {' in lines[i-1]:
-                continue  # Skip original #ifdef
-            else:
-                new_lines.append(line)
-        
-        with open('Utilities/cmlibuv/src/unix/core.c', 'w') as f:
-            f.writelines(new_lines)
-        
-        # Patch process.c - wrap entire CPU affinity section
-        with open('Utilities/cmlibuv/src/unix/process.c', 'r') as f:
-            content = f.read()
-        
-        # Add include
-        content = content.replace('#include "uv.h"', '#include "uv.h"\n#if defined(__ANDROID__)\n#include "android_compat.h"\n#endif')
-        
-        # Find and wrap the cpuset declaration and usage
-        content = re.sub(
-            r'(#ifdef __linux__\n  uv__cpu_set_t cpuset;\n#endif)',
-            r'#if defined(__linux__) && (!defined(__ANDROID__) || __ANDROID_API__ >= 28)\n  uv__cpu_set_t cpuset;\n#endif',
-            content
-        )
-        
-        # Wrap the CPU affinity usage code
-        content = re.sub(
-            r'(#ifdef __linux__\n    CPU_ZERO)',
-            r'#if defined(__linux__) && (!defined(__ANDROID__) || __ANDROID_API__ >= 28)\n    CPU_ZERO',
-            content
-        )
-        
-        with open('Utilities/cmlibuv/src/unix/process.c', 'w') as f:
-            f.write(content)
-        
-        # Patch pipe.c
-        with open('Utilities/cmlibuv/src/unix/pipe.c', 'r') as f:
-            content = f.read()
-        
-        content = content.replace('#include "uv.h"', '#include "uv.h"\n#if defined(__ANDROID__)\n#include "android_compat.h"\n#endif')
-        
-        with open('Utilities/cmlibuv/src/unix/pipe.c', 'w') as f:
-            f.write(content)
-        
-        print("✓ Patched")
-        PYTHON
-        
-        cat > Utilities/cmlibarchive/libarchive/android_lf.h << 'EOF'
-        #ifndef ANDROID_LF_H
-        #define ANDROID_LF_H
-        #include <sys/types.h>
-        #include <fcntl.h>
-        #include <unistd.h>
-        #include <sys/stat.h>
-        #if defined(__ANDROID__)
-        #ifndef lstat64
-        #define lstat64 lstat
-        #endif
-        #ifndef stat64
-        #define stat64 stat
-        #endif
-        #ifndef fstat64
-        #define fstat64 fstat
-        #endif
-        #ifndef open64
-        #define open64 open
-        #endif
-        #ifndef lseek64
-        #define lseek64 lseek
-        #endif
-        #ifndef off64_t
-        #define off64_t off_t
-        #endif
-        #ifndef ftruncate64
-        #define ftruncate64 ftruncate
-        #endif
-        #endif
-        #endif
-        EOF
+        echo "=== Checking android_compat.h ==="
+        ls -la Utilities/cmlibuv/src/unix/android_compat.h
+        echo ""
+        echo "=== Checking android_lf.h ==="
+        ls -la Utilities/cmlibarchive/libarchive/android_lf.h
+        echo ""
+        echo "=== Verifying core.c patches ==="
+        grep -n "__ANDROID__" Utilities/cmlibuv/src/unix/core.c | head -5
+        echo ""
+        echo "=== Verifying process.c patches ==="
+        grep -n "__ANDROID__" Utilities/cmlibuv/src/unix/process.c | head -5
 
-    - name: Configure
+    - name: Configure Android Build
       run: |
         cd CMake
+        
         case "${{ matrix.arch }}" in
           arm64-v8a) CLANG_PREFIX="aarch64-linux-android" ;;
           armeabi-v7a) CLANG_PREFIX="armv7a-linux-androideabi" ;;
           x86_64) CLANG_PREFIX="x86_64-linux-android" ;;
           x86) CLANG_PREFIX="i686-linux-android" ;;
         esac
+        
         echo "CLANG_PREFIX=$CLANG_PREFIX" >> $GITHUB_ENV
         
-        mkdir build-${{ matrix.arch }}
+        mkdir -p build-${{ matrix.arch }}
         cd build-${{ matrix.arch }}
+        
         cmake .. \
           -DCMAKE_TOOLCHAIN_FILE=$ANDROID_NDK_HOME/build/cmake/android.toolchain.cmake \
           -DANDROID_ABI=${{ matrix.arch }} \
@@ -179,22 +67,53 @@ jobs:
           -DCMAKE_CXX_FLAGS="-Os -ffunction-sections -fdata-sections -fno-rtti" \
           -DCMAKE_SHARED_LINKER_FLAGS="-Wl,--gc-sections -Wl,--strip-all -Wl,-z,max-page-size=16384" \
           -DBUILD_TESTING=OFF \
-          -DBUILD_QtDialog=OFF
+          -DBUILD_QtDialog=OFF \
+          -DCMAKE_USE_SYSTEM_LIBRARIES=OFF
 
-    - name: Build
+    - name: Build CMake
       run: |
         cd CMake/build-${{ matrix.arch }}
         make -j$(nproc)
+        
+        if [ ! -f lib/libCMakeLib.a ]; then
+          echo "ERROR: Build failed - libCMakeLib.a not found"
+          exit 1
+        fi
+        
+        echo "✓ Build successful"
+        ls -lh lib/libCMakeLib.a
+
+    - name: Create Shared Library
+      run: |
+        cd CMake/build-${{ matrix.arch }}
+        
         $ANDROID_NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64/bin/${{ env.CLANG_PREFIX }}21-clang++ \
           -shared -o libcmake.so \
           -Wl,--whole-archive lib/libCMakeLib.a -Wl,--no-whole-archive \
-          -Os -Wl,--gc-sections -Wl,--strip-all -Wl,-z,max-page-size=16384 \
+          -Os -ffunction-sections -fdata-sections \
+          -Wl,--gc-sections -Wl,--strip-all -Wl,-z,max-page-size=16384 \
           -fPIC -ldl -llog -latomic
+        
         $ANDROID_NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-strip --strip-unneeded libcmake.so
+        
+        echo "✓ Created libcmake.so"
         ls -lh libcmake.so
+        file libcmake.so
 
-    - name: Upload
+    - name: Upload Artifact
       uses: actions/upload-artifact@v4
       with:
-        name: cmake-${{ matrix.arch }}
+        name: cmake-android-${{ matrix.arch }}
         path: CMake/build-${{ matrix.arch }}/libcmake.so
+        retention-days: 30
+
+    - name: Build Summary
+      run: |
+        cd CMake/build-${{ matrix.arch }}
+        echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+        echo "  CMake Android - ${{ matrix.arch }}"
+        echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+        echo "Architecture: ${{ matrix.arch }}"
+        echo "Min API:      21 (Android 5.0+)"
+        echo "Size:         $(ls -lh libcmake.so | awk '{print $5}')"
+        echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
