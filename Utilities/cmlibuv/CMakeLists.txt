@@ -252,6 +252,13 @@ if(CMAKE_SYSTEM_NAME STREQUAL "Android")
     )
 endif()
 
+# ADD THIS NEW BLOCK HERE
+if(CMAKE_SYSTEM_NAME STREQUAL "Android" AND CMAKE_SIZEOF_VOID_P EQUAL 8)
+  message(STATUS "cmlibuv: Applying 64-bit Android signal block workaround")
+  list(APPEND uv_defines _BLOCK_SIGNALS_LOCO=1)
+endif()
+
+
 
 if(CMAKE_SYSTEM_NAME STREQUAL "NetBSD")
   list(APPEND uv_libraries

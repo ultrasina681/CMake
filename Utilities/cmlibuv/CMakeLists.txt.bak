@@ -199,7 +199,7 @@ if(CMAKE_SYSTEM_NAME STREQUAL "Darwin")
 endif()
 
 if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
-  list(APPEND uv_libraries dl rt)
+  list(APPEND uv_libraries dl)
   list(APPEND uv_headers
     include/uv/linux.h
     )
@@ -234,7 +234,7 @@ endif()
 
 if(CMAKE_SYSTEM_NAME STREQUAL "Android")
   message(STATUS "cmlibuv: Configuring for Android")
-  list(APPEND uv_libraries dl rt)
+  list(APPEND uv_libraries dl)
   list(APPEND uv_headers
     include/uv/linux.h
     )
