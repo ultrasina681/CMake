@@ -103,11 +103,6 @@ jobs:
         EOF
         
         echo "Patches applied successfully"
-        
-        # Verify patches
-        echo "=== Verifying patches ==="
-        grep -n "defined(__ANDROID__)" Utilities/cmlibuv/src/unix/core.c | head -5
-        cat Utilities/cmlibarchive/libarchive/android_lf.h
 
     - name: Build Native CMake (Host Tools)
       run: |
@@ -154,11 +149,11 @@ jobs:
         echo "CLANG_PREFIX=$CLANG_PREFIX" >> $GITHUB_ENV
         
         echo "=== Building for $ANDROID_ABI ==="
-        echo "Target triple: $CLANG_PREFIX"
         
         mkdir -p build-android-${{ matrix.arch }}
         cd build-android-${{ matrix.arch }}
         
+        # Don't disable exceptions - jsoncpp needs them
         ../build-host/bin/cmake .. \
           -DCMAKE_TOOLCHAIN_FILE=$ANDROID_NDK_HOME/build/cmake/android.toolchain.cmake \
           -DANDROID_ABI=$ANDROID_ABI \
@@ -167,7 +162,7 @@ jobs:
           -DCMAKE_SYSTEM_NAME=Android \
           -DCMAKE_BUILD_TYPE=MinSizeRel \
           -DCMAKE_C_FLAGS="-Os -ffunction-sections -fdata-sections -fvisibility=hidden" \
-          -DCMAKE_CXX_FLAGS="-Os -ffunction-sections -fdata-sections -fvisibility=hidden -fno-rtti -fno-exceptions" \
+          -DCMAKE_CXX_FLAGS="-Os -ffunction-sections -fdata-sections -fvisibility=hidden -fno-rtti" \
           -DCMAKE_SHARED_LINKER_FLAGS="-Wl,--gc-sections -Wl,--strip-all -Wl,-z,max-page-size=16384" \
           -DBUILD_TESTING=OFF \
           -DBUILD_QtDialog=OFF \
@@ -226,7 +221,7 @@ jobs:
         CLANG_BIN="$ANDROID_NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64/bin"
         
         echo "=== Checking exported symbols ==="
-        ${CLANG_BIN}/llvm-nm -gD libcmake.so | grep -i cmake | head -20 || echo "No cmake symbols exported (may be stripped)"
+        ${CLANG_BIN}/llvm-nm -gD libcmake.so | grep -i cmake | head -20 || echo "Symbols may be stripped"
         
         echo ""
         echo "=== Library dependencies ==="
@@ -255,7 +250,7 @@ jobs:
         - Optimized for size (-Os)
         - Stripped of debug symbols
         - 16KB page size support
-        - No RTTI, No Exceptions
+        - No RTTI (exceptions enabled for jsoncpp)
         
         Size: $(du -h libcmake.so | cut -f1)
         EOF
@@ -295,7 +290,7 @@ jobs:
         echo "  ✓ Size optimized (-Os)"
         echo "  ✓ 16KB page size support"
         echo "  ✓ Stripped symbols"
-        echo "  ✓ No RTTI/Exceptions"
+        echo "  ✓ No RTTI (exceptions enabled)"
         echo "  ✓ Android API 21+ compatible"
         echo ""
         echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
