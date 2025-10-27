@@ -69,7 +69,7 @@ extern char **environ;
 #endif
 
 #ifndef CMAKE_BOOTSTRAP
-#if defined(__linux__)
+#if defined(__linux__) && (!defined(__ANDROID__) || __ANDROID_API__ >= 28)
 # define uv__cpu_set_t cpu_set_t
 #elif defined(__FreeBSD__)
 # include <sys/param.h>
@@ -297,7 +297,7 @@ static void uv__process_child_init(const uv_process_options_t* options,
   int fd;
   int n;
 #ifndef CMAKE_BOOTSTRAP
-#if defined(__linux__) || defined(__FreeBSD__)
+#if (defined(__linux__) && (!defined(__ANDROID__) || __ANDROID_API__ >= 28)) || defined(__FreeBSD__)
   int r;
   int i;
   int cpumask_size;
@@ -410,8 +410,7 @@ static void uv__process_child_init(const uv_process_options_t* options,
   if ((options->flags & UV_PROCESS_SETUID) && setuid(options->uid))
     uv__write_errno(error_fd);
 
-#ifndef CMAKE_BOOTSTRAP
-#if defined(__linux__) || defined(__FreeBSD__)
+#ifndef CMAKE_BOOTSTRAP#if (defined(__linux__) && (!defined(__ANDROID__) || __ANDROID_API__ >= 28)) || defined(__FreeBSD__)
   if (options->cpumask != NULL) {
     cpumask_size = uv_cpumask_size();
     assert(options->cpumask_size >= (size_t)cpumask_size);

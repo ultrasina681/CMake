@@ -28,7 +28,9 @@
 #include <sys/un.h>
 #include <unistd.h>
 #include <stdlib.h>
-
+#if defined(__ANDROID__)
+#include "android_compat.h"
+#endif
 
 int uv_pipe_init(uv_loop_t* loop, uv_pipe_t* handle, int ipc) {
   uv__stream_init(loop, (uv_stream_t*)handle, UV_NAMED_PIPE);

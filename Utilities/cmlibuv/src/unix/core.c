@@ -1407,7 +1407,7 @@ int uv_os_gethostname(char* buffer, size_t* size) {
 
 
 int uv_cpumask_size(void) {
-#if defined(__linux__) || defined(__FreeBSD__)
+#if (defined(__linux__) && (!defined(__ANDROID__) || __ANDROID_API__ >= 28)) || defined(__FreeBSD__)
   return CPU_SETSIZE;
 #else
   return UV_ENOTSUP;
@@ -1644,7 +1644,7 @@ int uv__search_path(const char* prog, char* buf, size_t* buflen) {
 
 
 unsigned int uv_available_parallelism(void) {
-#ifdef __linux__
+#if defined(__linux__) && (!defined(__ANDROID__) || __ANDROID_API__ >= 28)
   cpu_set_t set;
   long rc;
 
