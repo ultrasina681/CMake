@@ -31,7 +31,7 @@ target_link_libraries(cmcppdap PRIVATE JsonCpp::JsonCpp)
 if(WIN32)
   target_link_libraries(cmcppdap PRIVATE ws2_32)
 elseif(NOT APPLE)
-  
+  target_link_libraries(cmcppdap PRIVATE Threads::Threads)
 endif()
 if(CMake_HAVE_CXX_ATOMIC_LIB)
   target_link_libraries(cmcppdap PRIVATE atomic)
