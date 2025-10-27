@@ -31,17 +31,13 @@ jobs:
       run: |
         cd CMake
         
-        echo "=== Creating comprehensive Android compat header ==="
+        echo "=== Creating android_compat.h ==="
         cat > Utilities/cmlibuv/src/unix/android_compat.h << 'EOF'
         #ifndef ANDROID_COMPAT_H
         #define ANDROID_COMPAT_H
-        
         #if defined(__ANDROID__)
         #include <unistd.h>
         #include <fcntl.h>
-        
-        /* pipe2 fallback */
-        #ifndef pipe2
         static inline int pipe2(int pipefd[2], int flags) {
           int ret = pipe(pipefd);
           if (ret == 0) {
@@ -57,70 +53,76 @@ jobs:
           return ret;
         }
         #endif
-        
-        /* Disable CPU affinity on Android API < 28 */
-        #if __ANDROID_API__ < 28
-        #define UV_DISABLE_CPU_AFFINITY 1
         #endif
-        
-        #endif /* __ANDROID__ */
-        #endif /* ANDROID_COMPAT_H */
         EOF
         
-        echo "=== Patching core.c - disable CPU_SETSIZE on old Android ==="
-        cat > /tmp/core_patch.txt << 'EOF'
-        --- a/Utilities/cmlibuv/src/unix/core.c
-        +++ b/Utilities/cmlibuv/src/unix/core.c
-        @@ -21,6 +21,10 @@
-         #include "uv.h"
-         #include "internal.h"
-         
-        +#if defined(__ANDROID__)
-        +#include "android_compat.h"
-        +#endif
-        +
-         #include <stddef.h> /* NULL */
-         #include <stdio.h> /* printf */
-         #include <stdlib.h>
-        @@ -1408,7 +1412,7 @@ int uv_os_unsetenv(const char* name) {
-         
-         
-         int uv_cpumask_size(void) {
-        -#if defined(__linux__) || defined(__FreeBSD__)
-        +#if (defined(__linux__) && (!defined(__ANDROID__) || __ANDROID_API__ >= 28)) || defined(__FreeBSD__)
-           return CPU_SETSIZE;
-         #else
-           return UV_ENOTSUP;
-        @@ -1644,7 +1648,7 @@ int uv__search_path(const char* prog, char* buf, size_t* buflen) {
-         
-         
-         unsigned int uv_available_parallelism(void) {
-        -#ifdef __linux__
-        +#if defined(__linux__) && (!defined(__ANDROID__) || __ANDROID_API__ >= 28)
-           cpu_set_t set;
-           long rc;
-         
-        EOF
+        echo "=== Patching with Python ==="
+        python3 << 'PYTHON'
+        import re
         
-        # Apply manual patches to core.c
-        sed -i '22i #if defined(__ANDROID__)\n#include "android_compat.h"\n#endif' Utilities/cmlibuv/src/unix/core.c
-        sed -i 's/^int uv_cpumask_size(void) {$/int uv_cpumask_size(void) {\n#if (defined(__linux__) \&\& (!defined(__ANDROID__) || __ANDROID_API__ >= 28)) || defined(__FreeBSD__)/' Utilities/cmlibuv/src/unix/core.c
-        sed -i '/^int uv_cpumask_size/,/^}$/ { s/^#if defined(__linux__) || defined(__FreeBSD__)$/  return CPU_SETSIZE;\n#else/; }' Utilities/cmlibuv/src/unix/core.c
+        # Patch core.c
+        with open('Utilities/cmlibuv/src/unix/core.c', 'r') as f:
+            content = f.read()
         
-        # Simpler approach - just replace the specific lines
-        sed -i '1411s/^#if defined(__linux__) || defined(__FreeBSD__)$/#if (defined(__linux__) \&\& (!defined(__ANDROID__) || __ANDROID_API__ >= 28)) || defined(__FreeBSD__)/' Utilities/cmlibuv/src/unix/core.c
-        sed -i '1648s/^#ifdef __linux__$/#if defined(__linux__) \&\& (!defined(__ANDROID__) || __ANDROID_API__ >= 28)/' Utilities/cmlibuv/src/unix/core.c
+        # Add include at top
+        content = content.replace('#include "uv.h"', '#include "uv.h"\n#if defined(__ANDROID__)\n#include "android_compat.h"\n#endif')
         
-        echo "=== Patching process.c - disable CPU affinity on old Android ==="
-        sed -i '1i #if defined(__ANDROID__)\n#include "android_compat.h"\n#endif' Utilities/cmlibuv/src/unix/process.c
+        # Fix uv_cpumask_size - line ~1410
+        content = re.sub(
+            r'int uv_cpumask_size\(void\) \{\n#if defined\(__linux__\) \|\| defined\(__FreeBSD__\)',
+            'int uv_cpumask_size(void) {\n#if (defined(__linux__) && (!defined(__ANDROID__) || __ANDROID_API__ >= 28)) || defined(__FreeBSD__)',
+            content
+        )
         
-        # Wrap the CPU affinity section in process.c
-        sed -i '/uv__cpu_set_t cpuset;/,/pthread_setaffinity_np/ {
-          s/^#ifdef __linux__$/#if defined(__linux__) \&\& (!defined(__ANDROID__) || __ANDROID_API__ >= 28)/
-        }' Utilities/cmlibuv/src/unix/process.c
+        # Fix uv_available_parallelism - line ~1646
+        content = re.sub(
+            r'unsigned int uv_available_parallelism\(void\) \{\n#ifdef __linux__',
+            'unsigned int uv_available_parallelism(void) {\n#if defined(__linux__) && (!defined(__ANDROID__) || __ANDROID_API__ >= 28)',
+            content
+        )
         
-        echo "=== Patching pipe.c ==="
-        sed -i '1i #if defined(__ANDROID__)\n#include "android_compat.h"\n#endif' Utilities/cmlibuv/src/unix/pipe.c
+        with open('Utilities/cmlibuv/src/unix/core.c', 'w') as f:
+            f.write(content)
+        
+        # Patch process.c
+        with open('Utilities/cmlibuv/src/unix/process.c', 'r') as f:
+            content = f.read()
+        
+        content = content.replace('#include "uv.h"', '#include "uv.h"\n#if defined(__ANDROID__)\n#include "android_compat.h"\n#endif')
+        
+        # Wrap CPU affinity code
+        content = re.sub(
+            r'(  int\* cpumask;\n  int cpumask_size;\n#ifdef __linux__\n  uv__cpu_set_t cpuset;)',
+            r'\1\n#if !defined(__ANDROID__) || __ANDROID_API__ >= 28',
+            content
+        )
+        
+        # Close the wrapper before the #endif
+        lines = content.split('\n')
+        new_lines = []
+        in_cpuset = False
+        for i, line in enumerate(lines):
+            new_lines.append(line)
+            if 'uv__cpu_set_t cpuset;' in line:
+                in_cpuset = True
+            elif in_cpuset and line.strip() == '#endif':
+                new_lines.insert(-1, '#endif /* !ANDROID || API >= 28 */')
+                in_cpuset = False
+        
+        with open('Utilities/cmlibuv/src/unix/process.c', 'w') as f:
+            f.write('\n'.join(new_lines))
+        
+        # Patch pipe.c
+        with open('Utilities/cmlibuv/src/unix/pipe.c', 'r') as f:
+            content = f.read()
+        
+        content = content.replace('#include "uv.h"', '#include "uv.h"\n#if defined(__ANDROID__)\n#include "android_compat.h"\n#endif')
+        
+        with open('Utilities/cmlibuv/src/unix/pipe.c', 'w') as f:
+            f.write(content)
+        
+        print("✓ Patched libuv files")
+        PYTHON
         
         echo "=== Creating android_lf.h ==="
         cat > Utilities/cmlibarchive/libarchive/android_lf.h << 'EOF'
