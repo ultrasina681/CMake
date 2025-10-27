@@ -8,9 +8,8 @@ elseif(CMAKE_C_COMPILER_ID STREQUAL "PathScale")
   set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -woffall")
 endif()
 
-find_package(Threads)
 
-set(uv_libraries ${CMAKE_THREAD_LIBS_INIT})
+
 set(uv_includes include src)
 set(uv_headers
   include/uv.h
@@ -199,7 +198,7 @@ if(CMAKE_SYSTEM_NAME STREQUAL "Darwin")
 endif()
 
 if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
-  list(APPEND uv_libraries dl)
+  list(APPEND uv_libraries dl pthread)
   list(APPEND uv_headers
     include/uv/linux.h
     )
@@ -234,7 +233,7 @@ endif()
 
 if(CMAKE_SYSTEM_NAME STREQUAL "Android")
   message(STATUS "cmlibuv: Configuring for Android")
-  list(APPEND uv_libraries dl)
+list(APPEND uv_libraries dl pthread)
   list(APPEND uv_headers
     include/uv/linux.h
     )
@@ -252,11 +251,7 @@ if(CMAKE_SYSTEM_NAME STREQUAL "Android")
     )
 endif()
 
-# ADD THIS NEW BLOCK HERE
-if(CMAKE_SYSTEM_NAME STREQUAL "Android" AND CMAKE_SIZEOF_VOID_P EQUAL 8)
-  message(STATUS "cmlibuv: Applying 64-bit Android signal block workaround")
-  list(APPEND uv_defines _BLOCK_SIGNALS_LOCO=1)
-endif()
+
 
 
 
