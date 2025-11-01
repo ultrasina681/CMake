@@ -3161,17 +3161,6 @@ void FindCMakeResourcesInBuildTree(std::string const& exe_dir)
 
 void cmSystemTools::FindCMakeResources(char const* argv0)
 {
-  // Check CMAKE_ROOT environment variable first
-  const char* envRoot = std::getenv("CMAKE_ROOT");
-  if (envRoot && envRoot[0] != '\0') {
-    std::string envRootStr(envRoot);
-    if (cmSystemTools::FileExists(cmStrCat(envRootStr, "/Modules/CMake.cmake"))) {
-      cmSystemToolsCMakeRoot = envRootStr;
-      cmSystemToolsCMakeCommand = FindOwnExecutable(argv0);
-      return;
-    }
-  }
-  
   std::string exe = FindOwnExecutable(argv0);
 #ifdef CMAKE_BOOTSTRAP
   // The bootstrap cmake knows its resource locations.
