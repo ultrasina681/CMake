@@ -66,6 +66,9 @@ jobs:
           -DCMAKE_C_FLAGS="-Os -ffunction-sections -fdata-sections" \
           -DCMAKE_CXX_FLAGS="-Os -ffunction-sections -fdata-sections" \
           -DCMAKE_SHARED_LINKER_FLAGS="-Wl,--gc-sections -Wl,--strip-all -Wl,-z,max-page-size=16384" \
+          -DCMAKE_THREAD_LIBS_INIT="" \
+          -DCMAKE_HAVE_THREADS_LIBRARY=OFF \
+          -DCMAKE_USE_PTHREADS_INIT=OFF \
           -DBUILD_TESTING=OFF \
           -DBUILD_QtDialog=OFF \
           -DCMAKE_USE_SYSTEM_LIBRARIES=OFF
