@@ -2705,9 +2705,3 @@ int cmVSLink::RunMT(std::string const& out, bool notify)
 }
 
 // Export main entry point for dynamic loading
-extern "C" __attribute__((visibility("default")))
-int cmake_main(int argc, char const* const* argv)
-{
-  cmSystemTools::EnsureStdPipes();
-  return cmcmd::ExecuteCMakeCommand(argc, argv);
-}

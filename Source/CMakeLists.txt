@@ -1002,6 +1002,10 @@ if(CMAKE_USE_WMAKE)
     )
 endif()
 
+if(ANDROID)
+  target_sources(CMakeLib PRIVATE cmAndroidExport.cxx)
+endif()
+
 # GHS support
 # Works only for windows and linux
 if(WIN32 OR CMAKE_SYSTEM_NAME STREQUAL "Linux")
