@@ -1,3 +1,4 @@
+```yaml
 name: Build CMake for Android (All Architectures)
 
 on:
@@ -63,8 +64,8 @@ jobs:
           -DANDROID_ABI=${{ matrix.arch }} \
           -DANDROID_PLATFORM=android-21 \
           -DCMAKE_BUILD_TYPE=MinSizeRel \
-          -DCMAKE_C_FLAGS="-Os -ffunction-sections -fdata-sections" \
-          -DCMAKE_CXX_FLAGS="-Os -ffunction-sections -fdata-sections" \
+          -DCMAKE_C_FLAGS="-Os -ffunction-sections -fdata-sections -D__ANDROID__" \
+          -DCMAKE_CXX_FLAGS="-Os -ffunction-sections -fdata-sections -D__ANDROID__" \
           -DCMAKE_SHARED_LINKER_FLAGS="-Wl,--gc-sections -Wl,--strip-all -Wl,-z,max-page-size=16384" \
           -DCMAKE_THREAD_LIBS_INIT="" \
           -DCMAKE_HAVE_THREADS_LIBRARY=OFF \
@@ -127,3 +128,4 @@ jobs:
         echo "Min API:      21 (Android 5.0+)"
         echo "Size:         $(ls -lh libcmake.so | awk '{print $5}')"
         echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+```
