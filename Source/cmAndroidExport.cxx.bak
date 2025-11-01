@@ -1,10 +1,14 @@
 #include "cmake.h"
+#include "cmSystemTools.h"
 #include "cmDocumentationEntry.h"
 #include <vector>
 
 extern "C" __attribute__((visibility("default")))
 int cmake_main(int argc, char const* const* argv)
 {
+  // Ensure CMAKE_ROOT is found from environment
+  cmSystemTools::FindCMakeResources(argv[0]);
+  
   // Convert to vector for cmake
   std::vector<std::string> args;
   args.reserve(argc);

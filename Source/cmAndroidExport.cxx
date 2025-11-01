@@ -1,6 +1,7 @@
 #include "cmake.h"
 #include "cmSystemTools.h"
 #include "cmDocumentationEntry.h"
+#include "cmState.h"
 #include <vector>
 
 extern "C" __attribute__((visibility("default")))
@@ -16,9 +17,11 @@ int cmake_main(int argc, char const* const* argv)
     args.push_back(argv[i]);
   }
   
-  // Create cmake instance
-  cmake::Role const role = cmake::RoleInternal;
-  cmake cm(role, cmState::Unknown);
+  // Create cmake instance with proper role
+  cmake::Role const role = cmake::RoleProject;
+  cmake cm(role, cmState::Project);
+  
+  // Initialize
   cm.SetHomeDirectory("");
   cm.SetHomeOutputDirectory("");
   
