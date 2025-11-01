@@ -748,6 +748,12 @@ bool cmGlobalNinjaGenerator::FindMakeProgram(cmMakefile* mf)
   }
   if (cmValue ninjaCommand = mf->GetDefinition("CMAKE_MAKE_PROGRAM")) {
     this->NinjaCommand = *ninjaCommand;
+#ifdef __ANDROID__
+    // Skip ninja version check on Android - just generate build files
+    this->NinjaVersion = "1.11.0";
+    this->CheckNinjaFeatures();
+    return true;
+#else
     std::vector<std::string> command;
     command.push_back(this->NinjaCommand);
     command.emplace_back("--version");
@@ -766,6 +772,7 @@ bool cmGlobalNinjaGenerator::FindMakeProgram(cmMakefile* mf)
     }
     this->NinjaVersion = cmTrimWhitespace(version);
     this->CheckNinjaFeatures();
+#endif
   }
   return true;
 }
@@ -835,6 +842,11 @@ void cmGlobalNinjaGenerator::CheckNinjaFeatures()
 
 void cmGlobalNinjaGenerator::CheckNinjaCodePage()
 {
+#ifdef __ANDROID__
+  // Skip on Android - no process spawning
+  this->NinjaExpectedEncoding = codecvt_Encoding::None;
+  return;
+#else
   std::vector<std::string> command{ this->NinjaCommand, "-t", "wincodepage" };
   std::string output;
   std::string error;
@@ -876,8 +888,8 @@ void cmGlobalNinjaGenerator::CheckNinjaCodePage()
   } else {
     this->NinjaExpectedEncoding = codecvt_Encoding::ANSI;
   }
+#endif
 }
-
 bool cmGlobalNinjaGenerator::CheckLanguages(
   std::vector<std::string> const& languages, cmMakefile* mf) const
 {
