@@ -90,9 +90,16 @@ jobs:
       run: |
         cd CMake/build-${{ matrix.arch }}
         
+        # Collect all static libraries
+        LIBS=$(find . -name "*.a" | grep -v "libCMakeLib.a" | tr '\n' ' ')
+        
+        echo "Linking libraries:"
+        echo "  libCMakeLib.a"
+        echo "  + $(echo $LIBS | wc -w) dependency libraries"
+        
         $ANDROID_NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64/bin/${{ env.CLANG_PREFIX }}21-clang++ \
           -shared -o libcmake.so \
-          -Wl,--whole-archive Source/libCMakeLib.a -Wl,--no-whole-archive \
+          -Wl,--whole-archive Source/libCMakeLib.a $LIBS -Wl,--no-whole-archive \
           -Os -ffunction-sections -fdata-sections \
           -Wl,--gc-sections -Wl,--strip-all -Wl,-z,max-page-size=16384 \
           -fPIC -ldl -llog -latomic
