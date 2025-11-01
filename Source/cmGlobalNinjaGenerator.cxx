@@ -606,17 +606,6 @@ std::vector<std::string> const& cmGlobalNinjaGenerator::GetConfigNames() const
 // Used in:
 //   Source/cmLocalGenerator.cxx
 //   Source/cmake.cxx
-std::vector<std::string> const& cmGlobalNinjaGenerator::GetConfigNames() const
-{
-  return static_cast<cmLocalNinjaGenerator const*>(
-           this->LocalGenerators.front().get())
-    ->GetConfigNames();
-}
-
-// Implemented in all cmGlobaleGenerator sub-classes.
-// Used in:
-//   Source/cmLocalGenerator.cxx
-//   Source/cmake.cxx
 void cmGlobalNinjaGenerator::Generate()
 {
   // Check minimum Ninja version.
@@ -684,6 +673,7 @@ void cmGlobalNinjaGenerator::Generate()
 
 void cmGlobalNinjaGenerator::CleanMetaData()
 {
+#ifndef __ANDROID__
   constexpr size_t ninja_tool_arg_size = 8; // 2 `-_` flags and 4 separators
   auto run_ninja_tool = [this](std::vector<char const*> const& args) {
     std::vector<std::string> command;
@@ -717,7 +707,6 @@ void cmGlobalNinjaGenerator::CleanMetaData()
     this->NinjaSupportsUnconditionalRecompactTool &&
     !cmSystemTools::FileExists("build.ninja");
 
-#ifndef __ANDROID__
   // The `recompact` tool loads the manifest. As above, we don't have a single
   // `build.ninja` to load for this in Ninja-Multi. This may be relaxed in the
   // future pending further investigation into how Ninja works upstream
@@ -753,6 +742,7 @@ void cmGlobalNinjaGenerator::CleanMetaData()
   }
 #endif
 }
+
 bool cmGlobalNinjaGenerator::FindMakeProgram(cmMakefile* mf)
 {
   if (!this->cmGlobalGenerator::FindMakeProgram(mf)) {
