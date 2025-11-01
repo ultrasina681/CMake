@@ -233,7 +233,7 @@ endif()
 
 if(CMAKE_SYSTEM_NAME STREQUAL "Android")
   message(STATUS "cmlibuv: Configuring for Android")
-list(APPEND uv_libraries dl)
+  list(APPEND uv_libraries dl)
   list(APPEND uv_headers
     include/uv/linux.h
     )
@@ -248,6 +248,7 @@ list(APPEND uv_libraries dl)
     src/unix/proctitle.c
     src/unix/sysinfo-loadavg.c
     src/unix/sysinfo-memory.c
+    src/unix/pthread-fixes.c
     )
 endif()
 

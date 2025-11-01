@@ -246,8 +246,6 @@ if(CMAKE_SYSTEM_NAME STREQUAL "Android")
     src/unix/linux-syscalls.h
     src/unix/procfs-exepath.c
     src/unix/proctitle.c
-    src/unix/sysinfo-loadavg.c
-    src/unix/sysinfo-memory.c
     src/unix/pthread-fixes.c
     )
 endif()
