@@ -78,13 +78,13 @@ jobs:
         cd CMake/build-${{ matrix.arch }}
         make -j$(nproc) CMakeLib
         
-        if [ ! -f lib/libCMakeLib.a ]; then
+        if [ ! -f Source/libCMakeLib.a ]; then
           echo "ERROR: Build failed - libCMakeLib.a not found"
           exit 1
         fi
         
         echo "✓ Build successful"
-        ls -lh lib/libCMakeLib.a
+        ls -lh Source/libCMakeLib.a
 
     - name: Create Shared Library
       run: |
@@ -92,7 +92,7 @@ jobs:
         
         $ANDROID_NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64/bin/${{ env.CLANG_PREFIX }}21-clang++ \
           -shared -o libcmake.so \
-          -Wl,--whole-archive lib/libCMakeLib.a -Wl,--no-whole-archive \
+          -Wl,--whole-archive Source/libCMakeLib.a -Wl,--no-whole-archive \
           -Os -ffunction-sections -fdata-sections \
           -Wl,--gc-sections -Wl,--strip-all -Wl,-z,max-page-size=16384 \
           -fPIC -ldl -llog -latomic
