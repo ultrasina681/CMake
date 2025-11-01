@@ -7,10 +7,10 @@
 extern "C" __attribute__((visibility("default")))
 int cmake_main(int argc, char const* const* argv)
 {
-  // Check for CMAKE_ROOT environment variable
+  // Read CMAKE_ROOT from environment and set it
   const char* cmakeRoot = std::getenv("CMAKE_ROOT");
   if (cmakeRoot && cmakeRoot[0] != '\0') {
-    cmSystemTools::PutEnv(std::string("CMAKE_ROOT=") + cmakeRoot);
+    cmSystemTools::s_ForceUnixPaths = true;
   }
   
   // Convert to vector for cmake
@@ -23,14 +23,14 @@ int cmake_main(int argc, char const* const* argv)
   // Create cmake instance
   cmake::Role const role = cmake::RoleInternal;
   cmake cm(role, cmState::Unknown);
-  
-  // Set home directories
-  if (cmakeRoot && cmakeRoot[0] != '\0') {
-    cm.SetCMakeRoot(cmakeRoot);
-  }
-  
   cm.SetHomeDirectory("");
   cm.SetHomeOutputDirectory("");
+  
+  // Add CMAKE_ROOT to cache if provided
+  if (cmakeRoot && cmakeRoot[0] != '\0') {
+    std::string cacheEntry = "CMAKE_ROOT:INTERNAL=" + std::string(cmakeRoot);
+    cm.GetCurrentSnapshot().SetDefinition("CMAKE_ROOT", cmakeRoot);
+  }
   
   // Run cmake with arguments
   int ret = cm.Run(args, false);
