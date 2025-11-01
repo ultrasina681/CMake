@@ -76,7 +76,7 @@ jobs:
     - name: Build CMake
       run: |
         cd CMake/build-${{ matrix.arch }}
-        make -j$(nproc)
+        make -j$(nproc) CMakeLib
         
         if [ ! -f lib/libCMakeLib.a ]; then
           echo "ERROR: Build failed - libCMakeLib.a not found"
